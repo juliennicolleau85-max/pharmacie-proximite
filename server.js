@@ -119,14 +119,17 @@ app.get("/nearest-route", (req, res) => {
 
   const candidates = withDistance.slice(0, 5);
 
-  res.json({
-    position: { lat, lon },
-    candidates: candidates.map(p => ({
-      nom: p.INTITULE_CLIENT,
-      ville: p.VILLE,
-      distance_km: Number(p.distanceKm.toFixed(2))
-    }))
-  });
+res.json({
+  position: { lat, lon },
+  candidates: candidates.map(p => ({
+    nom: p.INTITULE_CLIENT,
+    ville: p.VILLE,
+    latitude: p.latitude,
+    longitude: p.longitude,
+    distance_km: Number(p.distanceKm.toFixed(2))
+  }))
+});
+
 });
 
 /* =======================
@@ -202,7 +205,7 @@ app.get("/go", (req, res) => {
     <html>
     <head>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Pharmacie la plus proche</title>
+      <title>Pharmacies les plus proches</title>
       <style>
         body {
           margin: 0;
@@ -212,7 +215,7 @@ app.get("/go", (req, res) => {
           display: flex;
           justify-content: center;
           align-items: center;
-          height: 100vh;
+          min-height: 100vh;
           text-align: center;
         }
         .card {
@@ -226,17 +229,23 @@ app.get("/go", (req, res) => {
         }
         .btn {
           display: block;
-          padding: 15px;
+          padding: 12px;
           background: #00c853;
           color: white;
           text-decoration: none;
           border-radius: 12px;
           font-weight: bold;
-          font-size: 18px;
-          margin-top: 20px;
+          font-size: 16px;
+          margin-top: 10px;
         }
         .loading {
           font-size: 18px;
+        }
+        .pharma {
+          margin-bottom: 20px;
+        }
+        hr {
+          opacity: 0.3;
         }
       </style>
     </head>
@@ -254,7 +263,7 @@ app.get("/go", (req, res) => {
         }
 
         function loadPharmacy(lat, lon) {
-          fetch("/nearest?lat=" + lat + "&lon=" + lon)
+          fetch("/nearest-route?lat=" + lat + "&lon=" + lon)
             .then(res => res.json())
             .then(data => {
               if (data.error) {
@@ -262,14 +271,31 @@ app.get("/go", (req, res) => {
                 return;
               }
 
-              document.getElementById("content").innerHTML = \`
-                <h2>\${data.nom}</h2>
-                <p>\${data.ville}</p>
-                <p>📏 \${data.distance_km} km</p>
-                <a class="btn" href="\${data.waze_url}">
-                  🚗 Ouvrir dans Waze
-                </a>
-              \`;
+              const top3 = data.candidates.slice(0, 3);
+
+              let html = "<h2>Pharmacies proches</h2>";
+
+              top3.forEach(p => {
+                const wazeUrl =
+                  "https://waze.com/ul?ll=" +
+                  p.latitude + "," +
+                  p.longitude +
+                  "&navigate=yes&from=Current+Location";
+
+                html += \`
+                  <div class="pharma">
+                    <strong>\${p.nom}</strong><br>
+                    \${p.ville}<br>
+                    📏 \${p.distance_km} km
+                    <a class="btn" href="\${wazeUrl}">
+                      🚗 Ouvrir dans Waze
+                    </a>
+                  </div>
+                  <hr>
+                \`;
+              });
+
+              document.getElementById("content").innerHTML = html;
             })
             .catch(() => {
               showError("Erreur lors de la recherche.");
@@ -296,6 +322,7 @@ app.get("/go", (req, res) => {
     </html>
   `);
 });
+
 
 
 /* =======================
