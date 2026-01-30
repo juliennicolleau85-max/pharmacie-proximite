@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Pharmacie la plus proche</title>
+</head>
+<body>
+  <h2>📍 Pharmacie la plus proche</h2>
+  <button onclick="find()">Trouver</button>
+  <pre id="result"></pre>
+
+<script>
+function find() {
+  navigator.geolocation.getCurrentPosition(pos => {
+    fetch(`/closest?lat=${pos.coords.latitude}&lon=${pos.coords.longitude}`)
+      .then(r => r.json())
+      .then(data => {
+        document.getElementById("result").textContent =
+          data.nom + " – " + data.distance + " km";
+      });
+  });
+}
+</script>
+</body>
+</html>
