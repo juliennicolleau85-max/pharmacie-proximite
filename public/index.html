@@ -158,28 +158,34 @@ document.getElementById("searchAddress")
    LANCEMENT TRAJET
 =============================== */
 
-function selectAddress(toLat,toLon,label){
+function selectAddress(toLat, toLon, label){
+
+  console.log("selectAddress lancé");
 
   if (!navigator.geolocation) {
-    loadPharmacy(47.2184,-1.5536,toLat,toLon,label);
+    loadPharmacy(47.2184, -1.5536, toLat, toLon, label);
     return;
   }
 
   navigator.geolocation.getCurrentPosition(
 
-    position=>{
-      const lat=position.coords.latitude;
-      const lon=position.coords.longitude;
-      loadPharmacy(lat,lon,toLat,toLon,label);
+    position => {
+      const lat = position.coords.latitude;
+      const lon = position.coords.longitude;
+      loadPharmacy(lat, lon, toLat, toLon, label);
     },
 
-    error=>{
-      console.log("Géolocalisation refusée ou erreur");
-      loadPharmacy(47.2184,-1.5536,toLat,toLon,label);
+    error => {
+      console.log("Erreur géolocalisation :", error.message);
+
+      // fallback automatique
+      loadPharmacy(47.2184, -1.5536, toLat, toLon, label);
     },
 
     {
-      timeout: 5000
+      enableHighAccuracy: false,  // 🔥 important en intérieur
+      timeout: 5000,              // 🔥 max 5 sec
+      maximumAge: 60000           // 🔥 accepte position récente
     }
 
   );
@@ -284,10 +290,6 @@ function loadPharmacy(lat,lon,toLat,toLon,label){
 }  // ← fermeture de loadPharmacy
 
 // 🔥 Service Worker
-if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("/sw.js")
-    .then(() => console.log("Service Worker enregistré"));
-}
 
 </script>
 </body>
