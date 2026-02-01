@@ -253,6 +253,7 @@ return detour > 0 ? detour : 0;
 /* =======================
    /route-pharmacies
 ======================= */
+
 app.get('/route-pharmacies', async (req, res) => {
 
   const { fromLat, fromLon, toLat, toLon } = req.query;
@@ -275,25 +276,20 @@ app.get('/route-pharmacies', async (req, res) => {
 
     const data = await response.json();
 
+    if (!data.routes || !data.routes[0] || !data.routes[0].geometry) {
+      return res.status(500).json({ error: "Route non trouvée" });
+    }
+
     const totalSeconds = data.routes[0].duration;
     const totalMinutes = Math.round(totalSeconds / 60);
-
-    if (!data.routes || !data.routes[0] || !data.routes[0].geometry) {
-      return res.status(500).json({
-        error: "Route non trouvée"
-      });
-    }
 
     const routePoints = data.routes[0].geometry.coordinates.map(coord => ({
       lon: coord[0],
       lat: coord[1]
     }));
 
-    const thresholdKm = 10;
-    
     const visitedList = getVisited();
 
-    // 🔥 IMPORTANT : Promise.all pour permettre await
     const pharmaciesOnRoute = await Promise.all(
 
       pharmacies.map(async (pharmacy) => {
@@ -317,49 +313,43 @@ app.get('/route-pharmacies', async (req, res) => {
 
         });
 
-        if (minDistance <= thresholdKm) {
+        const isVisited = visitedList.includes(String(pharmacy.cip));
 
-          const isVisited = visitedList.includes(String(pharmacy.cip));
+        const detourMinutes = await calculateDetourMinutes(
+          { lat: fromLat, lng: fromLon },
+          { lat: pharmacy.latitude, lng: pharmacy.longitude },
+          { lat: toLat, lng: toLon },
+          totalMinutes
+        );
 
-          // 🔥 NOUVEAU : calcul détour
-          const detourMinutes = await calculateDetourMinutes(
-  { lat: fromLat, lng: fromLon },
-  { lat: pharmacy.latitude, lng: pharmacy.longitude },
-  { lat: toLat, lng: toLon },
-  totalMinutes
-);
+        const etaMinutes = Math.round(
+          (closestIndex / routePoints.length) * totalMinutes
+        );
 
-const etaMinutes = Math.round((closestIndex / routePoints.length) * totalMinutes);
-
-          return {
-  ...pharmacy,
-  distance_to_route_km: Number(minDistance.toFixed(2)),
-  route_index: closestIndex,
-  visited: isVisited,
-  detour_minutes: detourMinutes,
-  eta_minutes: etaMinutes   // ← AJOUTE CETTE LIGNE
-};
-        }
-
-        return null;
+        return {
+          ...pharmacy,
+          distance_to_route_km: Number(minDistance.toFixed(2)),
+          route_index: closestIndex,
+          visited: isVisited,
+          detour_minutes: detourMinutes,
+          eta_minutes: etaMinutes
+        };
 
       })
-
     );
 
-  const finalPharmacies = pharmaciesOnRoute
-  .filter(p => p !== null)
-  .slice(0, 5);
+    const finalPharmacies = pharmaciesOnRoute
+      .filter(p => p !== null)
+      .slice(0, 5);
 
-res.json({
-  total: finalPharmacies.length,
-  total_trajet_minutes: totalMinutes,
-  pharmacies: finalPharmacies
-});
-
+    res.json({
+      total: finalPharmacies.length,
+      total_trajet_minutes: totalMinutes,
+      pharmacies: finalPharmacies
+    });
 
   } catch (error) {
-    console.error("ERREUR COMPLETE :", error);
+    console.error("Erreur route :", error);
     res.status(500).json({
       error: "Erreur OSRM route",
       details: error.message
@@ -367,6 +357,7 @@ res.json({
   }
 
 });
+
 
 /* =======================
    TEST VISITE (temporaire)

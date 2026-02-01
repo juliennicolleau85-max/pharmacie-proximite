@@ -160,8 +160,6 @@ document.getElementById("searchAddress")
 
 function selectAddress(toLat, toLon, label){
 
-  console.log("selectAddress lancé");
-
   if (!navigator.geolocation) {
     loadPharmacy(47.2184, -1.5536, toLat, toLon, label);
     return;
@@ -176,16 +174,13 @@ function selectAddress(toLat, toLon, label){
     },
 
     error => {
-      console.log("Erreur géolocalisation :", error.message);
-
-      // fallback automatique
       loadPharmacy(47.2184, -1.5536, toLat, toLon, label);
     },
 
     {
-      enableHighAccuracy: false,  // 🔥 important en intérieur
-      timeout: 5000,              // 🔥 max 5 sec
-      maximumAge: 60000           // 🔥 accepte position récente
+      enableHighAccuracy: false,
+      timeout: 5000,
+      maximumAge: 60000
     }
 
   );
@@ -236,12 +231,16 @@ function loadPharmacy(lat,lon,toLat,toLon,label){
 
     data.pharmacies.forEach(p=>{
 
+      const detour = p.detour_minutes ?? 0;
+      const eta = p.eta_minutes ?? "-";
+      const distance = p.distance_to_route_km ?? "-";
+
       const wazeUrl="https://waze.com/ul?ll="
         +p.latitude+","+p.longitude+"&navigate=yes";
 
       const detourColor =
-        p.detour_minutes <= 3 ? "#16a34a" :
-        p.detour_minutes <= 10 ? "#f59e0b" :
+        detour <= 3 ? "#16a34a" :
+        detour <= 10 ? "#f59e0b" :
         "#dc2626";
 
       const visitBadge = p.visited
@@ -249,7 +248,7 @@ function loadPharmacy(lat,lon,toLat,toLon,label){
         : `<div class="badge" style="color:#16a34a;">🟢 À visiter</div>`;
 
       const rapidBadge =
-        p.detour_minutes <= 3
+        detour <= 3
           ? `<div class="badge" style="color:#16a34a;">🔥 Arrêt rapide</div>`
           : "";
 
@@ -261,13 +260,13 @@ function loadPharmacy(lat,lon,toLat,toLon,label){
 
           ${rapidBadge}
 
-          📍 Arrivée dans <b>${p.eta_minutes} min</b><br>
+          📍 Arrivée dans <b>${eta} min</b><br>
 
           <span style="color:${detourColor};">
-            ⏱ +${p.detour_minutes} min de détour
+            ⏱ +${detour} min de détour
           </span><br>
 
-          📏 ${p.distance_to_route_km} km du trajet<br>
+          📏 ${distance} km du trajet<br>
 
           ${visitBadge}
 
@@ -282,15 +281,9 @@ function loadPharmacy(lat,lon,toLat,toLon,label){
 
     content.innerHTML=html;
 
-    })
+  })
   .catch(()=>{
     showError("Erreur lors de la recherche.");
   });
 
-}  // ← fermeture de loadPharmacy
-
-// 🔥 Service Worker
-
-</script>
-</body>
-</html>
+}
