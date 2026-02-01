@@ -348,24 +348,7 @@ const etaMinutes = Math.round((closestIndex / routePoints.length) * totalMinutes
     );
 
   const finalPharmacies = pharmaciesOnRoute
-  .filter(p => p && p.detour_minutes !== null && p.detour_minutes <= 20)
-  .sort((a, b) => {
-
-    // 1️⃣ Non visité en priorité
-    if (a.visited !== b.visited) {
-      return a.visited ? 1 : -1;
-    }
-
-    // 2️⃣ Petit détour en priorité
-if (a.detour_minutes !== b.detour_minutes) {
-  return a.detour_minutes - b.detour_minutes;
-}
-
-// 3️⃣ ETA la plus proche ensuite
-return a.eta_minutes - b.eta_minutes;
-
-
-  })
+  .filter(p => p !== null)
   .slice(0, 5);
 
 res.json({
@@ -373,6 +356,7 @@ res.json({
   total_trajet_minutes: totalMinutes,
   pharmacies: finalPharmacies
 });
+
 
   } catch (error) {
     console.error("ERREUR COMPLETE :", error);
