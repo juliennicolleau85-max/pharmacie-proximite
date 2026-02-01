@@ -160,6 +160,11 @@ document.getElementById("searchAddress")
 
 function selectAddress(toLat,toLon,label){
 
+  if (!navigator.geolocation) {
+    loadPharmacy(47.2184,-1.5536,toLat,toLon,label);
+    return;
+  }
+
   navigator.geolocation.getCurrentPosition(
 
     position=>{
@@ -168,12 +173,18 @@ function selectAddress(toLat,toLon,label){
       loadPharmacy(lat,lon,toLat,toLon,label);
     },
 
-    ()=>{
+    error=>{
+      console.log("Géolocalisation refusée ou erreur");
       loadPharmacy(47.2184,-1.5536,toLat,toLon,label);
+    },
+
+    {
+      timeout: 5000
     }
 
   );
 }
+
 
 
 /* ===============================
