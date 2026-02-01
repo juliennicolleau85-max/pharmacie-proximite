@@ -2,15 +2,8 @@ require("dotenv").config();
 
 const express = require("express");
 const pharmacies = require("./pharmacies.json");
-const fs = require('fs');
-
-function getVisited() {
-  const data = fs.readFileSync('./visited.json');
-  return JSON.parse(data).visited;
-}
 
 const app = express();
-app.use(express.static('public'));
 const PORT = 3000;
 
 /* =======================
@@ -31,30 +24,34 @@ function distanceKm(lat1, lon1, lat2, lon2) {
   return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 }
 
-/*
-========================
-ORS
-========================
-*/
-
+/* =======================
+   ORS (optionnel)
+======================= */
 async function getTravelTimeMinutes(fromLat, fromLon, toLat, toLon) {
+  const url =
+    "https://api.openrouteservice.org/v2/directions/driving-car" +
+    "?api_key=" + process.env.ORS_API_KEY;
 
-  const url = `https://router.project-osrm.org/route/v1/driving/${fromLon},${fromLat};${toLon},${toLat}?overview=false`;
-
-  const response = await fetch(url);
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      coordinates: [
+        [fromLon, fromLat],
+        [toLon, toLat]
+      ]
+    })
+  });
 
   if (!response.ok) {
-    throw new Error(`OSRM error ${response.status}`);
+    const txt = await response.text();
+    throw new Error(`ORS error ${response.status}: ${txt}`);
   }
 
   const data = await response.json();
-
-  const seconds = data.routes[0].duration;
-  const minutes = seconds / 60;
-const totalSeconds = data.routes[0].duration;
-const totalMinutes = Math.round(totalSeconds / 60);
-
-  return Math.max(1, Math.round(minutes));
+  return Math.round(data.routes[0].summary.duration / 60);
 }
 
 /* =======================
@@ -202,210 +199,135 @@ app.get("/nearest-route-test", async (req, res) => {
 /* =======================
    /go (page mobile)
 ======================= */
-app.get("/", (req, res) => {
-  res.redirect("/go");
-});
-
 app.get("/go", (req, res) => {
-  res.sendFile(__dirname + "/public/index.html");
-});
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Pharmacies les plus proches</title>
+      <style>
+        body {
+          margin: 0;
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+          background: linear-gradient(135deg, #2c3e50, #4ca1af);
+          color: white;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          min-height: 100vh;
+          text-align: center;
+        }
+        .card {
+          background: rgba(255,255,255,0.1);
+          backdrop-filter: blur(10px);
+          padding: 30px;
+          border-radius: 20px;
+          width: 90%;
+          max-width: 400px;
+          box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+        }
+        .btn {
+          display: block;
+          padding: 12px;
+          background: #00c853;
+          color: white;
+          text-decoration: none;
+          border-radius: 12px;
+          font-weight: bold;
+          font-size: 16px;
+          margin-top: 10px;
+        }
+        .loading {
+          font-size: 18px;
+        }
+        .pharma {
+          margin-bottom: 20px;
+        }
+        hr {
+          opacity: 0.3;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <div id="content" class="loading">
+          📍 Recherche de votre position...
+        </div>
+      </div>
 
+      <script>
+        function showError(message) {
+          document.getElementById("content").innerHTML =
+            "<p>" + message + "</p>";
+        }
 
-/* =======================
-   Fonction calcul détour
-======================= */
-async function calculateDetourMinutes(start, pharmacy, end, directMinutes) {
-  try {
-    const url =
-      `https://router.project-osrm.org/route/v1/driving/` +
-      `${start.lng},${start.lat};` +
-      `${pharmacy.lng},${pharmacy.lat};` +
-      `${end.lng},${end.lat}?overview=false`;
+        function loadPharmacy(lat, lon) {
+          fetch("/nearest-route?lat=" + lat + "&lon=" + lon)
+            .then(res => res.json())
+            .then(data => {
+              if (data.error) {
+                showError(data.error);
+                return;
+              }
 
-    const response = await fetch(url);
+              const top3 = data.candidates.slice(0, 3);
 
-    if (!response.ok) {
-      return null;
-    }
+              let html = "<h2>Pharmacies proches</h2>";
 
-    const data = await response.json();
+              top3.forEach(p => {
+                const wazeUrl =
+                  "https://waze.com/ul?ll=" +
+                  p.latitude + "," +
+                  p.longitude +
+                  "&navigate=yes&from=Current+Location";
 
-    if (data.routes && data.routes.length > 0) {
-      const durationSeconds = data.routes[0].duration;
-    const viaMinutes = Math.round(durationSeconds / 60);
+                html += \`
+                  <div class="pharma">
+                    <strong>\${p.nom}</strong><br>
+                    \${p.ville}<br>
+                    📏 \${p.distance_km} km
+                    <a class="btn" href="\${wazeUrl}">
+                      🚗 Ouvrir dans Waze
+                    </a>
+                  </div>
+                  <hr>
+                \`;
+              });
 
-// 🔥 vrai détour = durée via pharmacie - durée trajet direct
-const detour = viaMinutes - directMinutes;
+              document.getElementById("content").innerHTML = html;
+            })
+            .catch(() => {
+              showError("Erreur lors de la recherche.");
+            });
+        }
 
-return detour > 0 ? detour : 0;
-
-
-    }
-
-    return null;
-
-  } catch (error) {
-    console.error("Erreur OSRM détour:", error.message);
-    return null;
-  }
-}
-
-/* =======================
-   /route-pharmacies
-======================= */
-
-app.get('/route-pharmacies', async (req, res) => {
-
-  const { fromLat, fromLon, toLat, toLon } = req.query;
-
-  if (!fromLat || !fromLon || !toLat || !toLon) {
-    return res.status(400).json({ error: 'Coordonnées manquantes' });
-  }
-
-  try {
-
-    const url =
-      `https://router.project-osrm.org/route/v1/driving/` +
-      `${fromLon},${fromLat};${toLon},${toLat}?overview=full&geometries=geojson`;
-
-    const response = await fetch(url);
-
-    if (!response.ok) {
-      throw new Error(`OSRM error ${response.status}`);
-    }
-
-    const data = await response.json();
-
-    if (!data.routes || !data.routes[0] || !data.routes[0].geometry) {
-      return res.status(500).json({ error: "Route non trouvée" });
-    }
-
-    const totalSeconds = data.routes[0].duration;
-    const totalMinutes = Math.round(totalSeconds / 60);
-
-    const routePoints = data.routes[0].geometry.coordinates.map(coord => ({
-      lon: coord[0],
-      lat: coord[1]
-    }));
-
-    const visitedList = getVisited();
-
-    const pharmaciesOnRoute = await Promise.all(
-
-      pharmacies.map(async (pharmacy) => {
-
-        let minDistance = Infinity;
-        let closestIndex = -1;
-
-        routePoints.forEach((point, index) => {
-
-          const dist = distanceKm(
-            pharmacy.latitude,
-            pharmacy.longitude,
-            point.lat,
-            point.lon
+        if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(
+            position => {
+              const lat = position.coords.latitude;
+              const lon = position.coords.longitude;
+              loadPharmacy(lat, lon);
+            },
+            () => {
+              showError("Impossible d'obtenir la position GPS.");
+            },
+            { enableHighAccuracy: true }
           );
-
-          if (dist < minDistance) {
-            minDistance = dist;
-            closestIndex = index;
-          }
-
-        });
-
-        const isVisited = visitedList.includes(String(pharmacy.cip));
-
-        const detourMinutes = await calculateDetourMinutes(
-          { lat: fromLat, lng: fromLon },
-          { lat: pharmacy.latitude, lng: pharmacy.longitude },
-          { lat: toLat, lng: toLon },
-          totalMinutes
-        );
-
-        const etaMinutes = Math.round(
-          (closestIndex / routePoints.length) * totalMinutes
-        );
-
-        return {
-          ...pharmacy,
-          distance_to_route_km: Number(minDistance.toFixed(2)),
-          route_index: closestIndex,
-          visited: isVisited,
-          detour_minutes: detourMinutes,
-          eta_minutes: etaMinutes
-        };
-
-      })
-    );
-
-    const finalPharmacies = pharmaciesOnRoute
-      .filter(p => p !== null)
-      .slice(0, 5);
-
-    res.json({
-      total: finalPharmacies.length,
-      total_trajet_minutes: totalMinutes,
-      pharmacies: finalPharmacies
-    });
-
-  } catch (error) {
-    console.error("Erreur route :", error);
-    res.status(500).json({
-      error: "Erreur OSRM route",
-      details: error.message
-    });
-  }
-
+        } else {
+          showError("Géolocalisation non supportée.");
+        }
+      </script>
+    </body>
+    </html>
+  `);
 });
 
-
-/* =======================
-   TEST VISITE (temporaire)
-======================= */
-app.get('/test-visit', (req, res) => {
-
-  const cip = req.query.cip;
-
-  const data = JSON.parse(fs.readFileSync('./visited.json'));
-
-  if (!data.visited.includes(String(cip))) {
-    data.visited.push(String(cip));
-    fs.writeFileSync('./visited.json', JSON.stringify(data, null, 2));
-  }
-
-  res.json({ success: true });
-
-});
-
-
-/* =======================
-   MARK VISITED (propre)
-======================= */
-app.post('/mark-visited', express.json(), (req, res) => {
-
-  const { cip } = req.body;
-
-  if (!cip) {
-    return res.status(400).json({ error: "CIP manquant" });
-  }
-
-  const data = JSON.parse(fs.readFileSync('./visited.json'));
-
-  if (!data.visited.includes(String(cip))) {
-    data.visited.push(String(cip));
-    fs.writeFileSync('./visited.json', JSON.stringify(data, null, 2));
-  }
-
-  res.json({ success: true });
-
-});
 
 
 /* =======================
    Démarrage serveur
 ======================= */
-app.listen(PORT, "0.0.0.0", () => {
-
+app.listen(PORT, () => {
   console.log(`🚀 API démarrée sur http://localhost:${PORT}`);
-
 });
