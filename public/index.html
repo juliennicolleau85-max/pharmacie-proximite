@@ -1,25 +1,283 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html>
 <head>
-  <meta charset="UTF-8">
-  <title>Pharmacie la plus proche</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pharmacies sur mon trajet</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#2c3e50">
+
+
+<style>
+body {
+  margin:0;
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  background:linear-gradient(135deg,#2c3e50,#4ca1af);
+  color:white;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  min-height:100vh;
+  text-align:center;
+}
+
+.card{
+  background:rgba(255,255,255,0.1);
+  backdrop-filter:blur(10px);
+  padding:20px;
+  border-radius:20px;
+  width:95%;
+  max-width:420px;
+  box-shadow:0 20px 40px rgba(0,0,0,0.3);
+}
+
+input{
+  width:100%;
+  padding:10px;
+  border-radius:10px;
+  border:none;
+  font-size:14px;
+}
+
+.btn{
+  display:block;
+  padding:10px;
+  background:#2563eb;
+  color:white;
+  text-decoration:none;
+  border-radius:10px;
+  font-weight:bold;
+  font-size:14px;
+  margin-top:10px;
+}
+
+#suggestions{
+  background:white;
+  color:black;
+  border-radius:8px;
+  margin-top:5px;
+  text-align:left;
+  max-height:200px;
+  overflow-y:auto;
+}
+
+#suggestions div{
+  padding:8px;
+  cursor:pointer;
+  border-bottom:1px solid #eee;
+}
+
+#suggestions div:hover{
+  background:#f0f0f0;
+}
+
+.pharma-card{
+  background:white;
+  color:black;
+  border-radius:16px;
+  padding:15px;
+  margin-bottom:15px;
+  box-shadow:0 4px 12px rgba(0,0,0,0.1);
+  text-align:left;
+}
+
+.badge{
+  font-weight:bold;
+  margin-top:5px;
+}
+
+hr{
+  opacity:0.3;
+}
+</style>
 </head>
 <body>
-  <h2>📍 Pharmacie la plus proche</h2>
-  <button onclick="find()">Trouver</button>
-  <pre id="result"></pre>
+
+<div class="card">
+
+<input id="searchAddress"
+ placeholder="Rechercher une adresse en France..."
+ autocomplete="off">
+
+<div id="suggestions"></div>
+
+<div id="content">
+📍 Tapez une adresse pour commencer
+</div>
+
+</div>
 
 <script>
-function find() {
-  navigator.geolocation.getCurrentPosition(pos => {
-    fetch(`/closest?lat=${pos.coords.latitude}&lon=${pos.coords.longitude}`)
-      .then(r => r.json())
-      .then(data => {
-        document.getElementById("result").textContent =
-          data.nom + " – " + data.distance + " km";
-      });
-  });
+
+function showError(message){
+  document.getElementById("content").innerHTML="<p>"+message+"</p>";
 }
+
+/* ===============================
+   AUTOCOMPLETE FRANCE UNIQUEMENT
+=============================== */
+
+document.getElementById("searchAddress")
+.addEventListener("input",function(){
+
+  const query=this.value;
+
+  if(query.length<3){
+    document.getElementById("suggestions").innerHTML="";
+    return;
+  }
+
+  fetch("https://nominatim.openstreetmap.org/search?format=json&countrycodes=fr&limit=5&q="
+        +encodeURIComponent(query))
+  .then(res=>res.json())
+  .then(results=>{
+
+    const container=document.getElementById("suggestions");
+    container.innerHTML="";
+
+    results.forEach(place=>{
+
+      const div=document.createElement("div");
+      div.innerText=place.display_name;
+
+      div.onclick=function(){
+        container.innerHTML="";
+        document.getElementById("searchAddress").value=place.display_name;
+        selectAddress(place.lat,place.lon,place.display_name);
+      };
+
+      container.appendChild(div);
+
+    });
+
+  });
+
+});
+
+
+/* ===============================
+   LANCEMENT TRAJET
+=============================== */
+
+function selectAddress(toLat,toLon,label){
+
+  navigator.geolocation.getCurrentPosition(
+
+    position=>{
+      const lat=position.coords.latitude;
+      const lon=position.coords.longitude;
+      loadPharmacy(lat,lon,toLat,toLon,label);
+    },
+
+    ()=>{
+      loadPharmacy(47.2184,-1.5536,toLat,toLon,label);
+    }
+
+  );
+}
+
+
+/* ===============================
+   APPEL SERVEUR
+=============================== */
+
+function loadPharmacy(lat,lon,toLat,toLon,label){
+
+  fetch("/route-pharmacies?fromLat="+lat+
+        "&fromLon="+lon+
+        "&toLat="+toLat+
+        "&toLon="+toLon)
+
+  .then(res=>res.json())
+  .then(data=>{
+
+    const content=document.getElementById("content");
+    content.innerHTML="";
+
+    if(!data.pharmacies || data.pharmacies.length===0){
+      showError("Aucune pharmacie intéressante sur l’itinéraire.");
+      return;
+    }
+
+    let html="<h3>Destination :</h3>";
+    html+="<div style='font-size:14px;margin-bottom:10px;'>"+label+"</div>";
+
+    if(data.total_trajet_minutes){
+      html+="<div style='font-weight:bold;margin-bottom:15px;'>⏱ "
+           +data.total_trajet_minutes+" min</div>";
+    }
+
+    const wazeDestination="https://waze.com/ul?ll="
+        +toLat+","+toLon+"&navigate=yes";
+
+    html+=`
+      <a class="btn" href="${wazeDestination}" target="_blank">
+        🚗 Aller directement à la destination
+      </a>
+      <hr>
+      <h3>Pharmacies sur mon trajet</h3>
+    `;
+
+    data.pharmacies.forEach(p=>{
+
+      const wazeUrl="https://waze.com/ul?ll="
+        +p.latitude+","+p.longitude+"&navigate=yes";
+
+      const detourColor =
+        p.detour_minutes <= 3 ? "#16a34a" :
+        p.detour_minutes <= 10 ? "#f59e0b" :
+        "#dc2626";
+
+      const visitBadge = p.visited
+        ? `<div class="badge" style="color:#6b7280;">✔ Déjà visitée</div>`
+        : `<div class="badge" style="color:#16a34a;">🟢 À visiter</div>`;
+
+      const rapidBadge =
+        p.detour_minutes <= 3
+          ? `<div class="badge" style="color:#16a34a;">🔥 Arrêt rapide</div>`
+          : "";
+
+      html+=`
+        <div class="pharma-card">
+
+          <strong>${p.INTITULE_CLIENT}</strong><br>
+          ${p.VILLE}<br><br>
+
+          ${rapidBadge}
+
+          📍 Arrivée dans <b>${p.eta_minutes} min</b><br>
+
+          <span style="color:${detourColor};">
+            ⏱ +${p.detour_minutes} min de détour
+          </span><br>
+
+          📏 ${p.distance_to_route_km} km du trajet<br>
+
+          ${visitBadge}
+
+          <a class="btn" href="${wazeUrl}" target="_blank">
+            🚗 Ouvrir dans Waze
+          </a>
+
+        </div>
+      `;
+
+    });
+
+    content.innerHTML=html;
+
+    })
+  .catch(()=>{
+    showError("Erreur lors de la recherche.");
+  });
+
+}  // ← fermeture de loadPharmacy
+
+// 🔥 Service Worker
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/sw.js")
+    .then(() => console.log("Service Worker enregistré"));
+}
+
 </script>
 </body>
 </html>
